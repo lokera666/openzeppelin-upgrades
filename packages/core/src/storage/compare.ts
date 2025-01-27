@@ -91,10 +91,10 @@ export function storageFieldEnd(field: StorageField): bigint | undefined {
   return begin + BigInt(numberOfBytes);
 }
 
-const LAYOUTCHANGE_COST = 0;
+const LAYOUTCHANGE_COST = 1;
 const FINISHGAP_COST = 1;
 const SHRINKGAP_COST = 0;
-const TYPECHANGE_COST = 0;
+const TYPECHANGE_COST = 1;
 
 export class StorageLayoutComparator {
   hasAllowedUncheckedCustomTypes = false;
@@ -103,10 +103,45 @@ export class StorageLayoutComparator {
   stack = new Set<string>();
   cache = new Map<string, TypeChange | undefined>();
 
-  constructor(readonly unsafeAllowCustomTypes = false, readonly unsafeAllowRenames = false) {}
+  constructor(
+    readonly unsafeAllowCustomTypes = false,
+    readonly unsafeAllowRenames = false,
+  ) {}
 
-  compareLayouts(original: StorageItem[], updated: StorageItem[]): LayoutCompatibilityReport {
-    return new LayoutCompatibilityReport(this.layoutLevenshtein(original, updated, { allowAppend: true }));
+  compareLayouts(
+    original: StorageItem[],
+    updated: StorageItem[],
+    originalNamespaces?: Record<string, StorageItem[]>,
+    updatedNamespaces?: Record<string, StorageItem[]>,
+  ): LayoutCompatibilityReport {
+    const ops = this.layoutLevenshtein(original, updated, { allowAppend: true });
+    const namespacedOps = this.getNamespacedStorageOperations(originalNamespaces, updatedNamespaces);
+
+    return new LayoutCompatibilityReport([...ops, ...namespacedOps]);
+  }
+
+  private getNamespacedStorageOperations(
+    originalNamespaces?: Record<string, StorageItem[]>,
+    updatedNamespaces?: Record<string, StorageItem[]>,
+  ) {
+    const ops: StorageOperation<StorageItem>[] = [];
+    if (originalNamespaces !== undefined) {
+      for (const [storageLocation, origNamespacedLayout] of Object.entries(originalNamespaces)) {
+        const updatedNamespacedLayout = updatedNamespaces?.[storageLocation];
+        if (updatedNamespacedLayout !== undefined) {
+          ops.push(...this.layoutLevenshtein(origNamespacedLayout, updatedNamespacedLayout, { allowAppend: true }));
+        } else if (origNamespacedLayout.length > 0) {
+          ops.push({
+            kind: 'delete-namespace',
+            namespace: storageLocation,
+            original: {
+              contract: origNamespacedLayout[0].contract,
+            },
+          });
+        }
+      }
+    }
+    return ops;
   }
 
   private layoutLevenshtein<F extends StorageField>(
@@ -168,8 +203,9 @@ export class StorageLayoutComparator {
       original.label !== updated.renamedFrom &&
       (updated.label !== original.label ||
         (updated.renamedFrom !== undefined && updated.renamedFrom !== original.renamedFrom));
-    const retypedFromOriginal = original.type.item.label === updated.retypedFrom?.trim();
-    const typeChange = !retypedFromOriginal && this.getTypeChange(original.type, updated.type, { allowAppend: false });
+    const typeChange =
+      !this.isRetypedFromOriginal(original, updated) &&
+      this.getTypeChange(original.type, updated.type, { allowAppend: false });
     const layoutChange = this.getLayoutChange(original, updated);
 
     if (updated.retypedFrom && layoutChange && (!layoutChange.uncertain || !layoutChange.knownCompatible)) {
@@ -191,6 +227,13 @@ export class StorageLayoutComparator {
       // add this check as a safety fallback.
       return { kind: 'layoutchange', original, updated, change: layoutChange, cost: LAYOUTCHANGE_COST };
     }
+  }
+
+  private isRetypedFromOriginal(original: StorageField, updated: StorageField) {
+    const originalLabel = stripContractSubstrings(original.type.item.label);
+    const updatedLabel = stripContractSubstrings(updated.retypedFrom?.trim());
+
+    return originalLabel === updatedLabel;
   }
 
   getLayoutChange(original: StorageField, updated: StorageField): LayoutChange | undefined {
@@ -240,11 +283,20 @@ export class StorageLayoutComparator {
     updated: ParsedTypeDetailed,
     { allowAppend }: { allowAppend: boolean },
   ): TypeChange | undefined {
-    if (updated.head.startsWith('t_function')) {
+    if (original.head.startsWith('t_function') && updated.head.startsWith('t_function')) {
       return this.getVisibilityChange(original, updated);
     }
 
-    if (original.head !== updated.head) {
+    if (
+      (original.head === 't_contract' && updated.head === 't_address') ||
+      (original.head === 't_address' && updated.head === 't_contract')
+    ) {
+      // changing contract to address or address to contract
+      // equivalent to just addresses
+      return undefined;
+    }
+
+    if (normalizeMemoryPointer(original.head) !== normalizeMemoryPointer(updated.head)) {
       return { kind: 'obvious mismatch', original, updated };
     }
 
@@ -256,6 +308,7 @@ export class StorageLayoutComparator {
 
     switch (original.head) {
       case 't_contract':
+        // changing contract to contract
         // no storage layout errors can be introduced here since it is just an address
         return undefined;
 
@@ -388,4 +441,18 @@ export class StorageLayoutComparator {
 
 function enumSize(memberCount: number): number {
   return Math.ceil(Math.log2(Math.max(2, memberCount)) / 8);
+}
+
+export function stripContractSubstrings(label?: string) {
+  if (label !== undefined) {
+    return label.replace(/\b(contract|struct|enum) /g, '');
+  }
+}
+
+/**
+ * Some versions of Solidity use type ids with _memory_ptr suffix while other versions use _memory suffix.
+ * Normalize these for type comparison purposes only.
+ */
+function normalizeMemoryPointer(typeIdentifier: string): string {
+  return typeIdentifier.replace(/_memory_ptr\b/g, '_memory');
 }

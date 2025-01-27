@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.21.0 (2023-09-27)
+
+> **Warning**
+> This package is deprecated. Use [Hardhat](https://hardhat.org/) and [Hardhat Upgrades](https://docs.openzeppelin.com/upgrades-plugins/hardhat-upgrades), or [Foundry](https://github.com/foundry-rs/foundry) and [Foundry Upgrades](https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades).
+
+- Add validations for namespaced storage layout. ([#876](https://github.com/OpenZeppelin/openzeppelin-upgrades/pull/876))
+
+## 1.20.1 (2023-08-18)
+
+- Allow using proxy with different admin address than manifest. ([#859](https://github.com/OpenZeppelin/openzeppelin-upgrades/pull/859))
+
+## 1.20.0 (2023-08-03)
+
+- Add `txOverrides` option for overriding transaction parameters. ([#852](https://github.com/OpenZeppelin/openzeppelin-upgrades/pull/852))
+
+## 1.19.0 (2023-05-26)
+
+- Add `redeployImplementation` option, deprecate `useDeployedImplementation`. ([#804](https://github.com/OpenZeppelin/openzeppelin-upgrades/pull/804))
+
+## 1.18.2 (2023-05-12)
+
+- Add missing file in package. ([#797](https://github.com/OpenZeppelin/openzeppelin-upgrades/pull/797))
+
+## 1.18.1 (2023-05-12)
+
+- Use proxies from OpenZeppelin Contracts 4.8.3. ([#795](https://github.com/OpenZeppelin/openzeppelin-upgrades/pull/795))
+
+## 1.18.0 (2023-04-26)
+
+- Support `prepareUpgrade` from an implementation address. ([#777](https://github.com/OpenZeppelin/openzeppelin-upgrades/issues/777))
+
+## 1.17.1 (2023-03-03)
+
+- Use proxy transaction hash for implementation contract abstraction. ([#737](https://github.com/OpenZeppelin/openzeppelin-upgrades/pull/737))
+
 ## 1.17.0 (2022-09-27)
 
 - Include solc version in storage layouts in manifest files. ([#662](https://github.com/OpenZeppelin/openzeppelin-upgrades/pull/662))

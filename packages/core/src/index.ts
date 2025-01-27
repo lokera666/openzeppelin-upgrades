@@ -52,5 +52,15 @@ export {
   ForceImportUnsupportedError,
   NoContractImportError,
   ValidateUpdateRequiresKindError,
+  PrepareUpgradeRequiresKindError,
+  InitialOwnerUnsupportedKindError,
   assertNotProxy,
 } from './usage-error';
+
+export { ValidateUpgradeSafetyOptions, validateUpgradeSafety, ProjectReport, ReferenceContractNotFound } from './cli';
+
+export { getUpgradeInterfaceVersion } from './upgrade-interface-version';
+export { makeNamespacedInput, trySanitizeNatSpec } from './utils/make-namespaced';
+export { isNamespaceSupported } from './storage/namespace';
+export { inferProxyAdmin } from './infer-proxy-admin';
+export { assertUnreachable } from './utils/assert';

@@ -66,7 +66,7 @@ test('deploy implementation - before proxy deployment', async t => {
 
   const greeterImplAddr = await upgrades.deployImplementation(Greeter);
   const greeter = await upgrades.deployProxy(Greeter, ['Hello, Hardhat!'], { kind: 'transparent' });
-  t.is(greeterImplAddr, await upgrades.erc1967.getImplementationAddress(greeter.address));
+  t.is(greeterImplAddr, await upgrades.erc1967.getImplementationAddress(await greeter.getAddress()));
 });
 
 test('deploy implementation - after proxy deployment', async t => {
@@ -74,7 +74,7 @@ test('deploy implementation - after proxy deployment', async t => {
 
   const greeter = await upgrades.deployProxy(Greeter, ['Hello, Hardhat!'], { kind: 'transparent' });
   const greeterImplAddr = await upgrades.deployImplementation(Greeter);
-  t.is(greeterImplAddr, await upgrades.erc1967.getImplementationAddress(greeter.address));
+  t.is(greeterImplAddr, await upgrades.erc1967.getImplementationAddress(await greeter.getAddress()));
 });
 
 test('deploy implementation - with txresponse', async t => {
@@ -82,7 +82,7 @@ test('deploy implementation - with txresponse', async t => {
 
   const txResponse = await upgrades.deployImplementation(Greeter, { getTxResponse: true });
 
-  const precomputedAddress = ethers.utils.getContractAddress(txResponse);
+  const precomputedAddress = ethers.getCreateAddress(txResponse);
   const txReceipt = await txResponse.wait();
 
   t.is(txReceipt.contractAddress, precomputedAddress);
@@ -275,4 +275,72 @@ test('validate upgrade on deployed implementation - kind uups - no upgrade funct
   await t.throwsAsync(() => upgrades.validateUpgrade(greeter, GreeterV2, { kind: 'uups' }), {
     message: getUpgradeUnsafeRegex('GreeterV2'),
   });
+});
+
+test('prepare upgrade on deployed implementation - happy paths', async t => {
+  const { Greeter, GreeterV2, GreeterProxiable, GreeterV2Proxiable } = t.context;
+
+  const greeter = await upgrades.deployImplementation(Greeter);
+  const v2Impl = await upgrades.prepareUpgrade(greeter, GreeterV2, { kind: 'transparent' });
+  await GreeterV2.attach(v2Impl).resetGreeting();
+
+  const greeterUUPS = await upgrades.deployImplementation(GreeterProxiable);
+  const v2ImplUUPS = await upgrades.prepareUpgrade(greeterUUPS, GreeterV2Proxiable, { kind: 'uups' });
+  await GreeterV2Proxiable.attach(v2ImplUUPS).resetGreeting();
+});
+
+test('prepare upgrade on deployed implementation - incompatible storage', async t => {
+  const { Greeter, GreeterStorageConflict } = t.context;
+
+  const greeter = await upgrades.deployImplementation(Greeter);
+  await t.throwsAsync(() => upgrades.prepareUpgrade(greeter, GreeterStorageConflict, { kind: 'transparent' }), {
+    message: /(New storage layout is incompatible)/,
+  });
+});
+
+test('prepare upgrade on deployed implementation - incompatible storage - forced', async t => {
+  const { Greeter, GreeterStorageConflict } = t.context;
+
+  const greeter = await upgrades.deployImplementation(Greeter);
+  await upgrades.prepareUpgrade(greeter, GreeterStorageConflict, {
+    kind: 'transparent',
+    unsafeSkipStorageCheck: true,
+  });
+});
+
+test('prepare upgrade on deployed implementation - no kind', async t => {
+  const { GreeterProxiable, GreeterV2 } = t.context;
+
+  const greeter = await upgrades.deployImplementation(GreeterProxiable);
+  await t.throwsAsync(() => upgrades.prepareUpgrade(greeter, GreeterV2), {
+    message: /(The `kind` option must be provided)/,
+  });
+});
+
+test('prepare upgrade on deployed implementation - kind uups - no upgrade function', async t => {
+  const { GreeterProxiable, GreeterV2 } = t.context;
+
+  const greeter = await upgrades.deployImplementation(GreeterProxiable);
+  await t.throwsAsync(() => upgrades.prepareUpgrade(greeter, GreeterV2, { kind: 'uups' }), {
+    message: getUpgradeUnsafeRegex('GreeterV2'),
+  });
+});
+
+test('prepare upgrade on deployed implementation, then upgrade proxy', async t => {
+  const { Greeter, GreeterV2 } = t.context;
+
+  const greeterProxy = await upgrades.deployProxy(Greeter, ['Hello, Hardhat!']);
+  const v1Impl = await upgrades.erc1967.getImplementationAddress(await greeterProxy.getAddress());
+
+  const v2Impl = await upgrades.prepareUpgrade(v1Impl, GreeterV2, { kind: 'transparent' });
+  t.not(v1Impl, v2Impl);
+
+  const greeterProxyV2 = await upgrades.upgradeProxy(greeterProxy, GreeterV2);
+  const v2ImplUpgraded = await upgrades.erc1967.getImplementationAddress(await greeterProxy.getAddress());
+  t.is(await greeterProxyV2.greet(), 'Hello, Hardhat!');
+
+  t.is(v2Impl, v2ImplUpgraded);
+
+  await greeterProxyV2.resetGreeting();
+  t.is(await greeterProxyV2.greet(), 'Hello World');
 });

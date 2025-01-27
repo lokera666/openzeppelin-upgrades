@@ -780,3 +780,150 @@ contract StorageUpgrade_StructGap_V2_Bad {
     S[10] store_fixed_array;
     S[] store_dynamic_array;
 }
+
+contract StorageUpgrade_CustomGap_V1 {
+    uint256 a;
+    uint256[24] __gap_part1;
+    uint256 b;
+    uint256 c;
+    uint256[23] __gap_part2;
+    uint256 z;
+}
+
+contract StorageUpgrade_CustomGap_V2_Ok {
+    uint256 a;
+    uint256 a1;
+    uint256[23] __gap_part1;
+    uint256 b;
+    uint256 c;
+    uint256 c1;
+    uint256 c2;
+    uint256[21] __gap_part2;
+    uint256 z;
+}
+
+// insert var, did not shrink gaps
+contract StorageUpgrade_CustomGap_V2_Bad {
+    uint256 a;
+    uint256 a1;
+    uint256[24] __gap_part1;
+    uint256 b;
+    uint256 c;
+    uint256 c1;
+    uint256 c2;
+    uint256[23] __gap_part2;
+    uint256 z;
+}
+
+// insert var, shrank only first gap
+contract StorageUpgrade_CustomGap_V2_Bad2 {
+    uint256 a;
+    uint256 a1;
+    uint256[23] __gap_part1;
+    uint256 b;
+    uint256 c;
+    uint256 c1;
+    uint256 c2;
+    uint256[23] __gap_part2;
+    uint256 z;
+}
+
+contract StorageUpgrade_CustomGap_V2_Ok_Switched_Gaps {
+    uint256 a;
+    uint256 a1;
+    uint256[23] __gap_part2; // gap name changes are ok as long as gaps are used properly
+    uint256 b;
+    uint256 c;
+    uint256 c1;
+    uint256 c2;
+    uint256[21] __gap_part1; // gap name changes are ok as long as gaps are used properly
+    uint256 z;
+}
+
+contract StorageUpgrade_CustomGap_V2_Bad_Switched_Gaps {
+    uint256 a;
+    uint256 a1;
+    uint256[24] __gap_part2; // name changed but gap was not used properly
+    uint256 b;
+    uint256 c;
+    uint256[23] __gap_part1; // name changed but gap was not used properly
+    uint256 z;
+}
+
+contract StorageUpgrade_CustomGap_V2_Bad_Changed_Gap_Name {
+    uint256 a;
+    uint256 a1;
+    uint256[24] __gap; // name changed but gap was not used properly
+    uint256 b;
+    uint256 c;
+    uint256[23] __gap_part2; // name stayed the same
+    uint256 z;
+}
+
+contract Parent1 {
+    string[5] s;
+    uint256[45] private __gap;
+}
+
+contract Parent2 {
+    bool b;
+    uint256[49] private __gap;
+}
+
+contract StorageUpgrade_ConsumeAndAddGap_V1 is Parent1 {
+    uint256[50] private __gap;
+}
+
+contract StorageUpgrade_ConsumeAndAddGap_V2 is Parent1, Parent2 {
+}
+
+contract StorageUpgrade_ConsumeAndAddGap_V3 is Parent1, Parent2 {
+    uint256 a;
+    uint256[49] private __gap;
+}
+
+contract StorageUpgrade_ConsumeAndAddGap_V3b is Parent1, Parent2 {
+    uint256[50] private __gap;
+}
+
+contract V1Storage {
+    uint256[50] private __gap;
+}
+
+contract StorageUpgrade_ConsumeAndAddGap_Storage_V1 is V1Storage, Parent1 {
+}
+
+contract V2Storage {
+    uint256 abc;
+    uint256[49] private __gap;
+}
+
+contract StorageUpgrade_ConsumeAndAddGap_Storage_V2 is V2Storage, Parent1, Parent2 {
+}
+
+contract StorageUpgrade_FunctionPointer_V1 {
+    struct S {
+        uint256 a;
+        function(bool) external b;
+    }
+    S private s;
+    function(bool) external c;
+}
+
+contract StorageUpgrade_FunctionPointer_V2_Ok {
+    struct S {
+        uint256 a;
+        function(bool) external b;
+    }
+    S private s;
+    function(bool) external c;
+}
+
+contract StorageUpgrade_FunctionPointer_V2_Bad {
+    struct S {
+        uint256 a;
+        function(bool) b;
+    }
+    S private s;
+    function(bool) c;
+}

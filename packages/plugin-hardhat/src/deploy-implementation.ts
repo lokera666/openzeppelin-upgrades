@@ -2,20 +2,26 @@ import { HardhatRuntimeEnvironment } from 'hardhat/types';
 import type { ContractFactory, ethers } from 'ethers';
 
 import { DeployImplementationOptions } from './utils';
-import { deployStandaloneImpl } from './utils/deploy-impl';
+import { deployUpgradeableImpl } from './utils/deploy-impl';
+import { enableDefender } from './defender/utils';
 
 export type DeployImplementationFunction = (
   ImplFactory: ContractFactory,
   opts?: DeployImplementationOptions,
 ) => Promise<DeployImplementationResponse>;
 
-export type DeployImplementationResponse = string | ethers.providers.TransactionResponse;
+export type DeployImplementationResponse = string | ethers.TransactionResponse;
 
-export function makeDeployImplementation(hre: HardhatRuntimeEnvironment): DeployImplementationFunction {
+export function makeDeployImplementation(
+  hre: HardhatRuntimeEnvironment,
+  defenderModule: boolean,
+): DeployImplementationFunction {
   return async function deployImplementation(ImplFactory, opts: DeployImplementationOptions = {}) {
-    const deployedImpl = await deployStandaloneImpl(hre, ImplFactory, opts);
+    opts = enableDefender(hre, defenderModule, opts);
 
-    if (opts.getTxResponse && deployedImpl.txResponse !== undefined) {
+    const deployedImpl = await deployUpgradeableImpl(hre, ImplFactory, opts);
+
+    if (opts.getTxResponse && deployedImpl.txResponse) {
       return deployedImpl.txResponse;
     } else {
       return deployedImpl.impl;

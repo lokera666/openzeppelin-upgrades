@@ -1,8 +1,20 @@
 require('@openzeppelin/hardhat-upgrades');
 
+const override = {
+  version: '0.8.10',
+  settings: {
+    optimizer: {
+      enabled: true,
+    },
+  },
+};
+
 module.exports = {
   solidity: {
     compilers: [
+      {
+        version: '0.8.20',
+      },
       {
         version: '0.8.9',
       },
@@ -16,5 +28,10 @@ module.exports = {
         version: '0.5.17',
       },
     ],
+    overrides: {
+      'contracts/GapV1.sol': override,
+      'contracts/GapV2.sol': override,
+      'contracts/GapV2_Bad.sol': override,
+    },
   },
 };

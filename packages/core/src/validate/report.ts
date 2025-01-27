@@ -35,8 +35,10 @@ const errorInfo: ErrorDescriptions<ValidationError> = {
     link: 'https://zpl.in/upgrades/error-004',
   },
   'state-variable-immutable': {
-    msg: e => `Variable \`${e.name}\` is immutable`,
-    hint: () => `Use a constant or mutable variable instead`,
+    msg: e => `Variable \`${e.name}\` is immutable and will be initialized on the implementation`,
+    hint: () =>
+      `If by design, annotate with '@custom:oz-upgrades-unsafe-allow state-variable-immutable'\n` +
+      `Otherwise, consider a constant variable or use a mutable variable instead`,
     link: 'https://zpl.in/upgrades/error-005',
   },
   'external-library-linking': {
@@ -55,17 +57,48 @@ const errorInfo: ErrorDescriptions<ValidationError> = {
     hint: () => `Update your dependency and run again`,
   },
   'missing-public-upgradeto': {
-    msg: () => `Implementation is missing a public \`upgradeTo(address)\` function`,
+    msg: () =>
+      `Implementation is missing a public \`upgradeTo(address)\` or \`upgradeToAndCall(address,bytes)\` function`,
     hint: () =>
-      `Inherit UUPSUpgradeable to include this function in your contract\n` +
+      `Inherit UUPSUpgradeable to include one or both of these functions in your contract\n` +
       `    @openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol`,
     link: 'https://zpl.in/upgrades/error-008',
   },
+  'internal-function-storage': {
+    msg: e => `Variable \`${e.name}\` is an internal function`,
+    hint: () =>
+      `Use external functions or avoid functions in storage.\n` +
+      `     If you must use internal functions, skip this check with the \`unsafeAllow.internal-function-storage\`\n` +
+      `     flag and ensure you always reassign internal functions in storage during upgrades`,
+    link: 'https://zpl.in/upgrades/error-009',
+  },
+  'missing-initializer': {
+    msg: () => `Missing initializer`,
+    hint: () => `Define an initializer function and use it to call the initializers of parent contracts`,
+    link: 'https://zpl.in/upgrades/error-001',
+  },
+  'missing-initializer-call': {
+    msg: e => `Missing initializer calls for one or more parent contracts: \`${e.parentContracts.join(', ')}\``,
+    hint: () => `Call the parent initializers in your initializer function`,
+    link: 'https://zpl.in/upgrades/error-001',
+  },
+  'duplicate-initializer-call': {
+    msg: e => `Duplicate calls found to initializer \`${e.parentInitializer}\` for contract \`${e.parentContract}\``,
+    hint: () => `Only call each parent initializer once`,
+    link: 'https://zpl.in/upgrades/error-001',
+  },
+  'incorrect-initializer-order': {
+    msg: e =>
+      `Incorrect order of parent initializer calls.
+- Found initializer calls to parent contracts in the following order: ${e.foundOrder.join(', ')}
+- Expected: ${e.expectedLinearization.join(', ')}`,
+    hint: () => `Call parent initializers in linearized order`,
+  },
 };
 
-function describeError(e: ValidationError, color = true): string {
+export function describeError(e: ValidationError, color = true): string {
   const chalk = new _chalk.Instance({ level: color && _chalk.supportsColor ? _chalk.supportsColor.level : 0 });
-  const info = errorInfo[e.kind];
+  const info: any = errorInfo[e.kind]; // union type is too complex for TypeScript to represent, so we use `any`
   const log = [chalk.bold(e.src) + ': ' + info.msg(e as any)];
   const hint = info.hint?.(e as any);
   if (hint) {

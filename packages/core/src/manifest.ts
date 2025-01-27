@@ -1,23 +1,33 @@
+import os from 'os';
 import path from 'path';
 import { promises as fs } from 'fs';
-import { EthereumProvider, getChainId, networkNames } from './provider';
+import {
+  EthereumProvider,
+  HardhatMetadata,
+  getAnvilMetadata,
+  getChainId,
+  getHardhatMetadata,
+  networkNames,
+} from './provider';
 import lockfile from 'proper-lockfile';
 import { compare as compareVersions } from 'compare-versions';
 
-import type { Deployment } from './deployment';
+import type { Deployment, RemoteDeploymentId } from './deployment';
 import type { StorageLayout } from './storage';
 import { pick } from './utils/pick';
 import { mapValues } from './utils/map-values';
 import { UpgradesError } from './error';
+import debug from './utils/debug';
+import { assert } from './utils/assert';
 
 const currentManifestVersion = '3.2';
 
 export interface ManifestData {
   manifestVersion: string;
   impls: {
-    [version in string]?: ImplDeployment;
+    [version in string]?: ImplDeployment & RemoteDeploymentId;
   };
-  proxies: ProxyDeployment[];
+  proxies: (ProxyDeployment & RemoteDeploymentId)[];
   admin?: Deployment;
 }
 
@@ -38,27 +48,117 @@ function defaultManifest(): ManifestData {
   };
 }
 
-const manifestDir = '.openzeppelin';
+const MANIFEST_DEFAULT_DIR = process.env.MANIFEST_DEFAULT_DIR || '.openzeppelin';
+const MANIFEST_TEMP_DIR = 'openzeppelin-upgrades';
+
+type DevNetworkType = 'hardhat' | 'anvil';
+
+async function getDevInstanceMetadata(
+  provider: EthereumProvider,
+  chainId: number,
+): Promise<DevInstanceMetadata | undefined> {
+  let networkMetadata: HardhatMetadata;
+  let networkType: DevNetworkType;
+  try {
+    networkMetadata = await getAnvilMetadata(provider);
+    networkType = 'anvil';
+  } catch (e: unknown) {
+    try {
+      networkMetadata = await getHardhatMetadata(provider);
+      networkType = 'hardhat';
+    } catch (e: unknown) {
+      return undefined;
+    }
+  }
+
+  if (networkMetadata.chainId !== chainId) {
+    throw new Error(
+      `Broken invariant: Hardhat or Anvil metadata's chainId ${networkMetadata.chainId} does not match eth_chainId ${chainId}`,
+    );
+  }
+
+  return {
+    networkName: networkType,
+    instanceId: networkMetadata.instanceId,
+    forkedNetwork: networkMetadata.forkedNetwork,
+  };
+}
+
+function getSuffix(chainId: number, devInstanceMetadata?: DevInstanceMetadata) {
+  if (devInstanceMetadata !== undefined) {
+    return `${chainId}-${devInstanceMetadata.instanceId}`;
+  } else {
+    return `${chainId}`;
+  }
+}
+
+interface DevInstanceMetadata {
+  networkName: string;
+  instanceId: string;
+  forkedNetwork?: {
+    // The chainId of the network that is being forked
+    chainId: number;
+  } | null;
+}
 
 export class Manifest {
   readonly chainId: number;
   readonly file: string;
-  private readonly fallbackFile: string;
+  readonly fallbackFile: string;
+  private readonly dir: string;
+
+  private readonly chainIdSuffix: string;
+  private readonly parent?: Manifest;
 
   private locked = false;
 
   static async forNetwork(provider: EthereumProvider): Promise<Manifest> {
-    return new Manifest(await getChainId(provider));
+    const chainId = await getChainId(provider);
+    const devInstanceMetadata = await getDevInstanceMetadata(provider, chainId);
+    if (devInstanceMetadata !== undefined) {
+      return new Manifest(chainId, devInstanceMetadata, os.tmpdir());
+    } else {
+      return new Manifest(chainId);
+    }
   }
 
-  constructor(chainId: number) {
+  constructor(chainId: number, devInstanceMetadata?: DevInstanceMetadata, osTmpDir?: string) {
     this.chainId = chainId;
+    this.chainIdSuffix = getSuffix(chainId, devInstanceMetadata);
 
-    const fallbackName = `unknown-${this.chainId}`;
-    this.fallbackFile = path.join(manifestDir, `${fallbackName}.json`);
+    const defaultFallbackName = `unknown-${chainId}`;
 
-    const name = networkNames[this.chainId] ?? fallbackName;
-    this.file = path.join(manifestDir, `${name}.json`);
+    if (devInstanceMetadata !== undefined) {
+      assert(osTmpDir !== undefined);
+      this.dir = path.join(osTmpDir, MANIFEST_TEMP_DIR);
+      debug('development manifest directory:', this.dir);
+
+      const devName = `${devInstanceMetadata.networkName}-${this.chainIdSuffix}`;
+      const devFile = path.join(this.dir, `${devName}.json`);
+
+      this.file = devFile;
+      if (chainId === 31337) {
+        this.fallbackFile = path.join(MANIFEST_DEFAULT_DIR, `${defaultFallbackName}.json`);
+      } else {
+        this.fallbackFile = devFile;
+      }
+      debug('development manifest file:', this.file, 'fallback file:', this.fallbackFile);
+
+      if (devInstanceMetadata.forkedNetwork) {
+        const forkedChainId = devInstanceMetadata.forkedNetwork.chainId;
+        debug('forked network chain id:', forkedChainId);
+
+        this.parent = new Manifest(forkedChainId);
+      }
+    } else {
+      this.dir = MANIFEST_DEFAULT_DIR;
+
+      const networkName = networkNames[chainId];
+      this.file = path.join(MANIFEST_DEFAULT_DIR, `${networkName ?? defaultFallbackName}.json`);
+      this.fallbackFile = path.join(MANIFEST_DEFAULT_DIR, `${defaultFallbackName}.json`);
+
+      debug('manifest file:', this.file, 'fallback file:', this.fallbackFile);
+    }
   }
 
   async getAdmin(): Promise<Deployment | undefined> {
@@ -129,28 +229,34 @@ export class Manifest {
   }
 
   private async writeFile(content: string): Promise<void> {
-    await this.renameFileIfRequired();
+    await this.moveFileIfRequired();
     await fs.writeFile(this.file, content);
   }
 
-  private async renameFileIfRequired() {
+  private async moveFileIfRequired() {
     if (this.file !== this.fallbackFile && (await this.exists(this.fallbackFile))) {
       try {
-        await fs.rename(this.fallbackFile, this.file);
+        // copy and delete instead of rename to work across filesystems
+        await fs.copyFile(this.fallbackFile, this.file);
+        await fs.unlink(this.fallbackFile);
       } catch (e: any) {
-        throw new Error(`Failed to rename network file from ${this.fallbackFile} to ${this.file}: ${e.message}`);
+        throw new Error(`Failed to move network file from ${this.fallbackFile} to ${this.file}: ${e.message}`);
       }
     }
   }
 
-  async read(): Promise<ManifestData> {
-    const release = this.locked ? undefined : await this.lock();
+  async read(retries?: number): Promise<ManifestData> {
+    const release = this.locked ? undefined : await this.lock(retries);
     try {
       const data = JSON.parse(await this.readFile()) as ManifestData;
       return validateOrUpdateManifestVersion(data);
     } catch (e: any) {
       if (e.code === 'ENOENT') {
-        return defaultManifest();
+        if (this.parent !== undefined) {
+          return await this.parent.read(retries);
+        } else {
+          return defaultManifest();
+        }
       } else {
         throw e;
       }
@@ -179,11 +285,11 @@ export class Manifest {
     }
   }
 
-  private async lock() {
-    const lockfileName = path.join(manifestDir, `chain-${this.chainId}`);
+  private async lock(retries = 3) {
+    const lockfileName = path.join(this.dir, `chain-${this.chainIdSuffix}`);
 
     await fs.mkdir(path.dirname(lockfileName), { recursive: true });
-    const release = await lockfile.lock(lockfileName, { retries: 3, realpath: false });
+    const release = await lockfile.lock(lockfileName, { retries, realpath: false });
     this.locked = true;
     return async () => {
       await release();
@@ -229,11 +335,14 @@ export function normalizeManifestData(input: ManifestData): ManifestData {
   };
 }
 
-function normalizeDeployment<D extends Deployment>(input: D): Deployment;
-function normalizeDeployment<D extends Deployment, K extends keyof D>(input: D, include: K[]): Deployment & Pick<D, K>;
-function normalizeDeployment<D extends Deployment, K extends keyof D>(
+function normalizeDeployment<D extends Deployment & RemoteDeploymentId>(input: D): Deployment & RemoteDeploymentId;
+function normalizeDeployment<D extends Deployment & RemoteDeploymentId, K extends keyof D>(
+  input: D,
+  include: K[],
+): Deployment & RemoteDeploymentId & Pick<D, K>;
+function normalizeDeployment<D extends Deployment & RemoteDeploymentId, K extends keyof D>(
   input: D,
   include: K[] = [],
-): Deployment & Pick<D, K> {
-  return pick(input, ['address', 'txHash', ...include]);
+): Deployment & RemoteDeploymentId & Pick<D, K> {
+  return pick(input, ['address', 'txHash', 'remoteDeploymentId', ...include]);
 }

@@ -11,13 +11,13 @@ test('infer proxy kind', async t => {
   const { Greeter, GreeterProxiable } = t.context;
 
   const uups = await upgrades.deployProxy(GreeterProxiable, ['Hello, Hardhat!']);
-  t.is(await upgrades.erc1967.getAdminAddress(uups.address), ethers.constants.AddressZero);
+  t.is(await upgrades.erc1967.getAdminAddress(await uups.getAddress()), ethers.ZeroAddress);
 
   const transparent = await upgrades.deployProxy(Greeter, ['Hello, Hardhat!']);
-  t.is(await upgrades.erc1967.getAdminAddress(transparent.address), (await upgrades.admin.getInstance()).address);
+  t.not(await upgrades.erc1967.getAdminAddress(await transparent.getAddress()), ethers.ZeroAddress);
 
   const beacon = await upgrades.deployBeacon(Greeter);
   const beaconProxy = await upgrades.deployBeaconProxy(beacon, Greeter, ['Hello, Hardhat!']);
-  t.is(await upgrades.erc1967.getAdminAddress(beaconProxy.address), ethers.constants.AddressZero);
-  t.not(await upgrades.erc1967.getBeaconAddress(beaconProxy.address), ethers.constants.AddressZero);
+  t.is(await upgrades.erc1967.getAdminAddress(await beaconProxy.getAddress()), ethers.ZeroAddress);
+  t.not(await upgrades.erc1967.getBeaconAddress(await beaconProxy.getAddress()), ethers.ZeroAddress);
 });

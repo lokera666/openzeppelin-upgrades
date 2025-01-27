@@ -1,11 +1,12 @@
 module.exports = {
   root: true,
   parserOptions: {
-    ecmaVersion: 2018,
+    ecmaVersion: 2020,
   },
   extends: ['eslint:recommended', 'plugin:prettier/recommended'],
   env: {
     node: true,
+    es2022: true,
   },
   plugins: ['unicorn'],
   rules: {
@@ -14,6 +15,7 @@ module.exports = {
     'unicorn/no-array-reduce': 'warn',
     'no-plusplus': ['warn', { allowForLoopAfterthoughts: true }],
   },
+  ignorePatterns: ['submodules'],
   overrides: [
     {
       files: ['*.ts'],

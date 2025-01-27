@@ -1,13 +1,26 @@
 export interface EthereumProvider {
+  send(method: 'anvil_metadata', params: []): Promise<HardhatMetadata>;
+  send(method: 'hardhat_metadata', params: []): Promise<HardhatMetadata>;
   send(method: 'web3_clientVersion', params: []): Promise<string>;
   send(method: 'net_version', params: []): Promise<string>;
   send(method: 'eth_chainId', params: []): Promise<string>;
+  send(method: 'eth_instanceId', params: []): Promise<string>;
   send(method: 'eth_getCode', params: [string, string]): Promise<string>;
   send(method: 'eth_call', params: unknown[]): Promise<string>;
   send(method: 'eth_getStorageAt', params: [string, string, string]): Promise<string>;
   send(method: 'eth_getTransactionByHash', params: [string]): Promise<null | EthereumTransaction>;
   send(method: 'eth_getTransactionReceipt', params: [string]): Promise<null | EthereumTransactionReceipt>;
   send(method: string, params: unknown[]): Promise<unknown>;
+}
+
+export interface HardhatMetadata {
+  clientVersion: string;
+  chainId: number;
+  instanceId: string;
+  forkedNetwork?: {
+    // The chainId of the network that is being forked
+    chainId: number;
+  } | null;
 }
 
 interface EthereumTransaction {
@@ -36,6 +49,21 @@ export async function getChainId(provider: EthereumProvider): Promise<number> {
 
 export async function getClientVersion(provider: EthereumProvider): Promise<string> {
   return provider.send('web3_clientVersion', []);
+}
+
+/**
+ * Gets Hardhat metadata when used with Hardhat 2.12.3 or later.
+ * The underlying provider will throw an error if this RPC method is not available.
+ */
+export async function getHardhatMetadata(provider: EthereumProvider): Promise<HardhatMetadata> {
+  return provider.send('hardhat_metadata', []);
+}
+
+/**
+ * Anvil could have anvil_metadata, for which hardhat_metadata is an alias.
+ */
+export async function getAnvilMetadata(provider: EthereumProvider): Promise<HardhatMetadata> {
+  return provider.send('anvil_metadata', []);
 }
 
 export async function getStorageAt(
@@ -101,11 +129,25 @@ export const networkNames: { [chainId in number]?: string } = Object.freeze({
   3: 'ropsten',
   4: 'rinkeby',
   5: 'goerli',
+  10: 'optimism',
   42: 'kovan',
+  56: 'bsc',
+  97: 'bsc-testnet',
   137: 'polygon',
-  80001: 'polygon-mumbai',
+  420: 'optimism-goerli',
+  8453: 'base',
+  17000: 'holesky',
+  42161: 'arbitrum-one',
+  42170: 'arbitrum-nova',
+  421613: 'arbitrum-goerli',
   43113: 'avalanche-fuji',
   43114: 'avalanche',
+  42220: 'celo',
+  44787: 'celo-alfajores',
+  80001: 'polygon-mumbai',
+  84532: 'base-sepolia',
+  11155111: 'sepolia',
+  11155420: 'op-sepolia',
 });
 
 export async function isDevelopmentNetwork(provider: EthereumProvider): Promise<boolean> {
@@ -117,7 +159,7 @@ export async function isDevelopmentNetwork(provider: EthereumProvider): Promise<
   } else {
     const clientVersion = await getClientVersion(provider);
     const [name] = clientVersion.split('/', 1);
-    return name === 'HardhatNetwork' || name === 'EthereumJS TestRPC';
+    return name === 'HardhatNetwork' || name === 'EthereumJS TestRPC' || name === 'anvil';
   }
 }
 
