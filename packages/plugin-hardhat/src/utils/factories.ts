@@ -9,6 +9,9 @@ const BeaconProxy = require('@openzeppelin/upgrades-core/artifacts/@openzeppelin
 const UpgradeableBeacon = require('@openzeppelin/upgrades-core/artifacts/@openzeppelin/contracts-v5/proxy/beacon/UpgradeableBeacon.sol/UpgradeableBeacon.json');
 const TransparentUpgradeableProxy = require('@openzeppelin/upgrades-core/artifacts/@openzeppelin/contracts-v5/proxy/transparent/TransparentUpgradeableProxy.sol/TransparentUpgradeableProxy.json');
 
+// getProxyFactory, getTransparentUpgradeableProxyFactory, and getBeaconProxyFactory are used only
+// by the test suite; the plugin itself uses getUpgradeableBeaconFactory to attach to a beacon.
+
 export async function getProxyFactory(connection: NetworkConnection, signer?: Signer): Promise<ContractFactory> {
   const { ethers } = connection;
   return ethers.getContractFactory(ERC1967Proxy.abi, ERC1967Proxy.bytecode, signer);
